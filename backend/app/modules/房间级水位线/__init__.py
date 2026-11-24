@@ -78,11 +78,15 @@ def 推进(conn, 房间键: str, 候选事件时: str, 处理时: str) -> dict:
 
 
 def 只读(conn, 房间键: str | None = None) -> list[dict]:
-    """房级水位只读接口：每房给出 水位口径/扫描范围/valid。
+    """房级水位只读接口：每房给出 水位口径/扫描范围/valid，并附扫描范围徽标核证。
 
     valid 三条件：①水位行存在且所属直播间存在；②事件时水位可解析；
     ③水位不早于本房开播事件时（水位只升不退的自洽检查）。
+    徽标核证（徽标valid/范围/世代/徽标水位值）来自 modules.扫描范围徽标，
+    与水位行同房键对照：徽标房键/水位值与水位行分叉即判徽标 invalid，扫描器 fail-closed。
     """
+    from app.modules import 扫描范围徽标
+
     房行 = conn.execute("SELECT * FROM 直播间 ORDER BY 房间键").fetchall()
     out: list[dict] = []
     for 房 in 房行:
@@ -99,6 +103,14 @@ def 只读(conn, 房间键: str | None = None) -> list[dict]:
             "跨房关窗": 跨房关窗,
             "隔离口径": 隔离口径,
         }
+        徽证 = 扫描范围徽标._核证一房(conn, 房["房间键"])
+        项.update({
+            "徽标范围": 徽证["范围"],
+            "徽标世代": 徽证["徽标世代"],
+            "徽标水位值": 徽证["徽标水位值"],
+            "徽标valid": 徽证["valid"],
+            **({"徽标无效原因": 徽证["无效原因"]} if "无效原因" in 徽证 else {}),
+        })
         if wm is None:
             项.update({"valid": False, "无效原因": "缺水位行",
                        "事件时水位": None, "允许迟到秒": None, "更新处理时": None})

@@ -27,7 +27,7 @@ export default function 水位线页() {
           <thead>
             <tr>
               <th>房间</th><th>事件时水位</th><th>允许迟到秒</th><th>水位更新处理时</th>
-              <th>扫描范围</th><th>valid</th>
+              <th>扫描范围</th><th>徽标范围/世代</th><th>徽标水位值</th><th>水位valid</th><th>徽标核证</th>
             </tr>
           </thead>
           <tbody>
@@ -38,8 +38,15 @@ export default function 水位线页() {
                 <td>{r.允许迟到秒 ?? "—"}</td>
                 <td className="码">{r.更新处理时 || "—"}</td>
                 <td>{r.扫描范围}</td>
+                <td>{r.徽标范围 || "—"} / 世代 {r.徽标世代 ?? "—"}</td>
+                <td className="码">{r.徽标水位值 || "—"}</td>
                 <td>
                   {r.valid ? "✓ valid" : `✗ ${r.无效原因 || "invalid"}`}
+                </td>
+                <td>
+                  {r.徽标valid
+                    ? "✓ 与水位行对齐"
+                    : `✗ ${r.徽标无效原因 || "徽标invalid"}`}
                 </td>
               </tr>
             ))}

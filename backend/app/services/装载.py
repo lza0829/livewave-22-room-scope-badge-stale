@@ -1,6 +1,6 @@
 import json
 from app.db import 连接
-from app.modules import 房间级水位线, 多房串扰隔离
+from app.modules import 房间级水位线, 多房串扰隔离, 扫描范围徽标
 from app.seed import 此刻
 from app.services import 时间, 热度窗
 
@@ -50,6 +50,11 @@ def 装一批(体: dict) -> dict:
             房间级水位线.确保房水位行(
                 conn, 房间键, 房["开播事件时"], 默许迟到, 此刻()
             )
+            # 与水位行同票引导本房徽标（世代0）；历史库缺徽标行时在此补齐，杜绝空徽标扫描
+            初始水位 = conn.execute(
+                "SELECT 事件时水位 FROM 水位线 WHERE 房间键=?", (房间键,)
+            ).fetchone()["事件时水位"]
+            扫描范围徽标.确保房徽标行(conn, 房间键, 初始水位)
             水位 = conn.execute(
                 "SELECT * FROM 水位线 WHERE 房间键=?", (房间键,)
             ).fetchone()
@@ -68,14 +73,13 @@ def 装一批(体: dict) -> dict:
                 continue
 
             
+            # 房级抬升与徽标刷新同票：推进成功才刷徽标；刷新失败必须让异常上抛，
+            # 由本事务整票回滚（含已写水位行），禁止「抬升成功徽标未刷新」的半截态。
             推进结果 = 房间级水位线.推进(conn, 房间键, 事件时, 处理时)
             当前水位 = 推进结果["事件时水位"]
-            try:
-                from app.modules import 扫描范围徽标 as _徽
-                _徽.尝试刷徽标(conn, 房间键=房间键, 水位值=当前水位)
-            except Exception:
-                pass
-            
+            if 推进结果["推进"]:
+                扫描范围徽标.同票刷徽标(conn, 房间键=房间键, 水位值=当前水位)
+
             报告["新关窗"] += 热度窗.尝试关窗(
                 conn, 房间键, 当前水位, 允许迟到, 窗长, 处理时
             )

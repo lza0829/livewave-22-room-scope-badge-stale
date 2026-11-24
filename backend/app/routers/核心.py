@@ -176,9 +176,40 @@ from app.modules import 扫描范围徽标 as 徽
 
 @路由.get("/核证/扫描徽标")
 def 取扫描徽标(房间键: str | None = None):
+    """扫描范围徽标核证只读接口：每房徽标四要素（范围/房键/水位值/世代）核证 + 历史 + 工单审计。"""
     conn = 连接()
     try:
         return 徽.查徽标(conn, 房间键)
+    finally:
+        conn.close()
+
+
+class 全局工单请求(BaseModel):
+    工单号: str
+    房间键: str = ""
+
+
+@路由.post("/全局切换工单")
+def 登记全局工单(体: 全局工单请求):
+    """对照口径「全局切换工单扩权」的登记口（本系统未采用该取舍）。
+
+    工单只登记审计、永不扩权：登记后徽标仍是本房、扫描仍不得出房。
+    与装载写路径分开独立事务，登记动作不触碰任何徽标/水位行。
+    """
+    conn = 连接()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        行 = 徽.登记全局工单(conn, 体.工单号, 体.房间键)
+        conn.commit()
+        return {
+            "已登记": True,
+            "工单": 行,
+            "工单可扩权": 徽.工单扩权,
+            "提示": "本系统采用事件房键钉本房徽标：工单仅审计，徽标不得改全局、扫描不得出房",
+        }
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

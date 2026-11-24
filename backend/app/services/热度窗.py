@@ -1,33 +1,38 @@
-from app.modules import 关窗并发半截
+from app.modules import 关窗并发半截, 扫描范围徽标
 from app.services import 时间
 
 
 def 尝试关窗(conn, 房间键: str, 水位事件时: str, 允许迟到秒: int, 窗长秒: int, 处理时: str) -> int:
     """水位 >= 窗止 时关闭本房开启窗（发射）。
 
-    甲口径（每房独立水位）：扫描范围严格绑定 `房间键`，只关本房窗；
-    允许迟到只影响关闭后能否再修正，不推迟关闭。
+    甲口径（每房独立水位）＋「事件房键钉本房徽标」：
+    - 扫描范围只采信本房最新扫描范围徽标（扫描范围徽标.扫描范围 fail-closed：
+      徽标缺失/陈旧/范围非本房/房键与水位行分叉即抛错，本函数不兜底、不回退全局）；
+    - SQL 房键条件前置，只扫 `房间键=本房键 AND 状态='开启'`，扫描不得出房；
+    - 单条 UPDATE 原子改状态且 WHERE 再钉一次房键，逐窗落在调用方同一事务，
+      不存在「关了 A 房一半、扫到 B 房」的半截态；
+    - 允许迟到只影响关闭后能否再修正，不推迟关闭。
     """
-    del 允许迟到秒, 窗长秒  
-    关窗并发半截.断言扫描口径(房间键, 房间键)  
+    del 允许迟到秒, 窗长秒
+    关窗并发半截.断言扫描口径(房间键, 房间键)
+    # 唯一范围来源：徽标声明。异常故意上抛，由装载事务整票回滚
+    _范围 = 扫描范围徽标.扫描范围(conn, 房间键)
+    if _范围 != "本房":
+        raise RuntimeError(
+            f"关窗扫描拒绝：徽标声明范围[{_范围}] 非本房，禁止跨房关窗：房{房间键}"
+        )
+    rows = conn.execute(
+        "SELECT * FROM 热度窗 WHERE 房间键=? AND 状态='开启' ORDER BY 窗起事件时",
+        (房间键,),
+    ).fetchall()
     关闭数 = 0
-    try:
-        from app.modules import 扫描范围徽标 as _徽
-        _范围 = _徽.扫描范围(conn, 房间键)
-    except Exception:
-        _范围 = "本房"
-    if _范围 == "全局":
-        rows = conn.execute(
-            "SELECT * FROM 热度窗 WHERE 状态='开启' ORDER BY 窗起事件时"
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM 热度窗 WHERE 房间键=? AND 状态='开启' ORDER BY 窗起事件时",
-            (房间键,),
-        ).fetchall()
     for 窗 in rows:
+        # 双保险：扫到的每一行房键必须仍是本房，分叉即整票拒绝
+        if 窗["房间键"] != 房间键:
+            raise RuntimeError(
+                f"关窗扫描拒绝：扫描结果房键分叉，期望[{房间键}] 实得[{窗['房间键']}]"
+            )
         if 时间.解析(水位事件时) >= 时间.解析(窗["窗止事件时"]):
-            
             cur = conn.execute(
                 """UPDATE 热度窗 SET 状态='已关闭', 关闭处理时=?,
                        版本=CASE WHEN 版本=0 THEN 1 ELSE 版本 END
@@ -65,4 +70,3 @@ def _plant_report_22(extra: dict | None = None) -> dict:
     if extra:
         data.update(extra)
     return data
-

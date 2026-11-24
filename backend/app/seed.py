@@ -12,6 +12,14 @@ CREATE TABLE IF NOT EXISTS 扫描范围徽标 (
   时刻 TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS 全局切换工单 (
+  工单号 TEXT PRIMARY KEY,
+  房间键 TEXT NOT NULL DEFAULT '',
+  状态 TEXT NOT NULL DEFAULT '登记',
+  时刻 TEXT NOT NULL DEFAULT '',
+  处置 TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS 站规 (
   键 TEXT PRIMARY KEY,
   值 TEXT NOT NULL
@@ -106,6 +114,8 @@ def 初始化库() -> None:
             "关窗条件": "水位>=窗止即关闭发射",
             "旁路条件": "水位>=窗止+允许迟到",
             "多房隔离口径": "甲：每房独立水位（水位表主键=房间键；一房事件只抬本房水位、只关本房到期窗）",
+            "扫描徽标取舍": "事件房键钉本房徽标：每次抬升同票把徽标写成本房范围，扫描不得出房；全局切换工单仅登记审计、永不扩权，禁止无工单或凭工单保留/写回全局徽标",
+            "徽标同票四要素": "范围=本房、房键=本房键、水位值=本房水位行值、徽标世代单调递增；半截失败整票回滚",
             "骨架": "互动事件入流→事件时间水位线推进→热度窗关闭发射→迟到修正撤回→窗输出与撤回互证",
         }.items():
             conn.execute("INSERT INTO 站规(键, 值) VALUES (?, ?)", (k, v))
@@ -122,5 +132,12 @@ def 初始化库() -> None:
             "INSERT OR IGNORE INTO 水位线(房间键, 事件时水位, 允许迟到秒, 更新处理时) VALUES (?,?,?,?)",
             (房键, 开播, 30, 此刻()),
         )
+    # 引导本房徽标（世代 0），与水位行同库同事务；历史库无徽标行时在此补齐
+    from app.modules import 扫描范围徽标
+    for 房键, _, _, 开播 in (
+        ("房A", "晚间热聊", "主播小浪", "2026-11-22T12:00:00Z"),
+        ("房B", "午夜歌房", "主播小歌", "2026-11-22T12:00:00Z"),
+    ):
+        扫描范围徽标.确保房徽标行(conn, 房键, 开播)
     conn.commit()
     conn.close()

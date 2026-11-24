@@ -4,7 +4,11 @@ import { 取 } from "../api.js";
 export default function 热度窗页() {
   const [窗, 设] = useState([]);
   const [滤, 设滤] = useState("");
-  const 刷 = () => 取("/热度窗" + (滤 ? `?状态=${encodeURIComponent(滤)}` : "")).then(设);
+  const [徽证, 设徽证] = useState(null);
+  const 刷 = () => {
+    取("/热度窗" + (滤 ? `?状态=${encodeURIComponent(滤)}` : "")).then(设);
+    取("/核证/扫描徽标").then(设徽证).catch(() => 设徽证(null));
+  };
   useEffect(() => { 刷(); }, [滤]);
   return (
     <div>
@@ -12,6 +16,13 @@ export default function 热度窗页() {
       <p className="述">
         按事件时翻滚对齐的热度窗。开启时累计点赞/送礼；关闭后合计即「发射结果」。关闭后若仍在允许迟到内被修正，版本会升高。
       </p>
+      {徽证 && (
+        <div className="提示条">
+          关窗扫描只采信扫描范围徽标（取舍：{徽证.设计取舍}）：每房徽标钉本房、扫描不得出房；
+          整体采信＝<strong>{徽证.采信徽标 ? "是" : "否（徽标缺失/陈旧，扫描 fail-closed）"}</strong>
+          ，工单可扩权＝{徽证.工单可扩权 ? "是" : "否"}。
+        </div>
+      )}
       <div className="行">
         {["", "开启", "已关闭"].map((s) => (
           <button key={s || "全"} className={`次 ${滤 === s ? "亮片" : ""}`} onClick={() => 设滤(s)}>
